@@ -1,0 +1,64 @@
+Resources:
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Example Base Security Group
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        CidrIp: 0.0.0.0/0
+        FromPort: '22'
+        ToPort: '22'
+      - IpProtocol: tcp
+        CidrIp: 0.0.0.0/0
+        FromPort: '80'
+        ToPort: '80'
+  ElasticIP:
+    Type: AWS::EC2::EIP
+  DbGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Open database for access
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: '3306'
+        ToPort: '3306'
+        SourceSecurityGroupName:
+          Ref: WebServerSecurityGroup
+  CodeCommitRepo:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: !Sub ${AWS::StackName}-repo
+  AppBuildBucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-build
+Outputs:
+  DbGroup:
+    Description: db security group id
+    Value: !GetAtt DbGroup.GroupId
+    Export:
+      Name: ExampleDbGroup
+  ElasticIP:
+    Description: elastic ip
+    Value: !Ref ElasticIP
+    Export:
+      Name:  ExampleElasticIP
+  ElasitcIPAllocation:
+    Description: elastic ip allocation
+    Value: !GetAtt ElasticIP.AllocationId
+    Export:
+      Name:  ExampleElasticIPAllocation
+  WebServerSecurityGroup:
+    Description: web security group id
+    Value: !Ref WebServerSecurityGroup
+    Export:
+      Name:  ExampleWebServerSecurityGroup
+  AppBuildBucket:
+    Description: where the app builds are stored
+    Value: !Ref AppBuildBucket
+    Export:
+      Name:  AppBuildBucket
+  CodeCommitRepo:
+    Value: !GetAtt CodeCommitRepo.Name
+    Export:
+      Name:  CodeCommitRepo

@@ -1,0 +1,174 @@
+Parameters:
+  EnvironmentSize:
+    Type: String
+    Default: SMALL
+    AllowedValues:
+      - SMALL
+      - MEDIUM
+      - LARGE
+    Description: Select Environment Size (S,M,L)
+  TagKey:
+    Description: The EC2 tag key that identifies this as a target for deployments.
+    Type: String
+    Default: cfn-example
+    AllowedPattern: "[\\x20-\\x7E]*"
+    ConstraintDescription: Can contain only ASCII characters.
+  TagValue:
+    Description: The EC2 tag value that identifies this as a target for deployments.
+    Type: String
+    Default: example-app
+    AllowedPattern: "[\\x20-\\x7E]*"
+    ConstraintDescription: Can contain only ASCII characters.
+Mappings:
+  RegionMap:
+    us-east-1:
+      "AMALINUX" : "ami-c58c1dd3" # 2017.03
+    us-east-2:
+      "AMALINUX" : "ami-4191b524" # 2017.03
+    us-west-1:
+      "AMALINUX" : "ami-4836a428" # 2017.03
+    us-west-2:
+      "AMALINUX" : "ami-7a85a01a" # 2017.03
+    ca-central-1:
+      "AMALINUX" : "ami-0bd66a6f" # 2017.03
+    eu-west-1:
+      "AMALINUX" : "ami-01ccc867" # 2017.03
+    eu-central-1:
+      "AMALINUX" : "ami-b968bad6" # 2017.03
+    eu-west-2:
+      "AMALINUX" : "ami-b6daced2" # 2017.03
+    ap-southeast-1:
+      "AMALINUX" : "ami-fc5ae39f" # 2017.03
+    ap-southeast-2:
+      "AMALINUX" : "ami-9d15c7f3" # 2017.03
+    ap-northeast-2:
+      "AMALINUX" : "ami-923d12f5" # 2017.03
+    ap-northeast-1:
+      "AMALINUX" : "ami-162c2575" # 2017.03
+    ap-south-1:
+      "AMALINUX" : "ami-52c7b43d" # 2017.03
+    sa-east-1:
+      "AMALINUX" : "ami-37cfad5b" # 2017.03
+  InstanceSize:
+    SMALL:
+      "EC2" : "t2.small"
+      "DB" : "db.t2.micro"
+    MEDIUM:
+      "EC2" : "t2.small"
+      "DB" : "db.t2.small"
+    LARGE:
+      "EC2" : "t2.medium"
+      "DB" : "db.t2.medium"
+Resources:
+  InstanceRoleInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+        - !ImportValue InstanceRole
+  EC2:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", AMALINUX] # Dynamic mapping + Pseudo Parameter
+      InstanceType: !FindInMap [InstanceSize, !Ref EnvironmentSize, EC2]
+      KeyName: cfn-example
+      SecurityGroups:
+        - !ImportValue ExampleWebServerSecurityGroup
+      UserData:
+        "Fn::Base64":
+          !Sub |
+            #!/bin/bash
+            yum update -y aws-cfn-bootstrap # good practice - always do this.
+            /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource EC2 --configsets exampleconfigset --region ${AWS::Region}
+            yum -y update
+      Tags:
+      - Key:
+          Ref: TagKey
+        Value:
+          Ref: TagValue
+      IamInstanceProfile: !Ref InstanceRoleInstanceProfile
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          exampleconfigset:
+            - "configure_cfn"
+            - "install_packages"
+            - "install_codedeploy"
+        configure_cfn:
+          files:
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.EC2.Metadata.AWS::CloudFormation::Init
+                action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource EC2 --configsets exampleconfigset --region ${AWS::Region}
+              mode: "000400"
+              owner: root
+              group: root
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+                verbose=true
+                interval=5
+              mode: "000400"
+              owner: root
+              group: root
+          services:
+            sysvinit:
+              cfn-hup:
+                enabled: "true"
+                ensureRunning: "true"
+                files:
+                  - "/etc/cfn/cfn-hup.conf"
+                  - "/etc/cfn/hooks.d/cfn-auto-reloader.conf"
+        install_packages:
+          packages:
+            yum:
+              wget: []
+              mc: []
+              nano: []
+              nginx: []
+              php70: []
+              php70-cli: []
+              php70-fpm: []
+              php70-gd: []
+              php70-intl: []
+              php70-mbstring: []
+              php70-mysqlnd: []
+              php70-opcache: []
+              php70-pecl-imagick: []
+              ruby: []
+          services:
+            sysvinit:
+              nginx:
+                enabled: "true"
+                ensureRunning: "true"
+              php-fpm:
+                enabled: "true"
+                ensureRunning: "true"
+        install_codedeploy:
+          commands:
+            install1:
+              command: "wget https://aws-codedeploy-eu-central-1.s3.amazonaws.com/latest/install"
+              cwd: "~"
+              ignoreErrors: "false"
+            install2:
+              command: "chmod +x ./install"
+              cwd: "~"
+              ignoreErrors: "false"
+            install3:
+              command: "sudo ./install auto && sudo service codedeploy-agent start"
+              cwd: "~"
+              ignoreErrors: "false"
+          services:
+            sysvint:
+              codedeploy-agent:
+                enabled: 'true'
+                ensureRunning: 'true'
+  EIPA:
+    Type: "AWS::EC2::EIPAssociation"
+    Properties:
+      AllocationId: !ImportValue ExampleElasticIPAllocation
+      InstanceId: !Ref EC2
